@@ -1,0 +1,43 @@
+name: CD Users
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "services/users/**"
+      - "charts/app/**"
+      - ".github/workflows/cd-users.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EKS_CLUSTER: ${{ vars.EKS_CLUSTER }}
+      ECR_REPO: ${{ vars.ECR_USERS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_REGION
+
+      - name: Set IMAGE_TAG
+        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
+
+      - name: Helm upgrade users
+        run: |
+          helm upgrade --install users charts/app \
+            --set image.repository=$ECR_REPO \
+            --set image.tag=$IMAGE_TAG \
+            --set ingress.paths[0].path=/users \
+            --set service.targetPort=3000 \
+            --set service.port=80 \
+            --namespace default

@@ -1,0 +1,48 @@
+name: CI Users
+on:
+  push:
+    paths:
+      - "services/users/**"
+      - ".github/workflows/ci-users.yml"
+  pull_request:
+    paths:
+      - "services/users/**"
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPO:  ${{ vars.ECR_USERS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "18" }
+
+      - name: Install & test
+        working-directory: services/users
+        run: |
+          npm ci
+          npm test
+
+      - name: Configure AWS creds (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REPO:$IMAGE_TAG ./services/users
+          docker push $ECR_REPO:$IMAGE_TAG
+          echo "IMAGE=$ECR_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
